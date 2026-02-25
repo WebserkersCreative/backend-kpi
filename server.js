@@ -372,7 +372,7 @@ app.get("/api/tabungan-data", async (req, res) => {
   }
 });
 
-// ========================= TABUNGAN BATCH (Solusi 2: JSON Only) =========================
+// ========================= TABUNGAN BATCH (Sudah Diperbaiki) =========================
 app.post("/api/tabungan-batch", async (req, res) => {
   try {
     // 1. Ambil data dari Body (Sekarang murni JSON, file sudah berupa URL string)
@@ -387,7 +387,6 @@ app.post("/api/tabungan-batch", async (req, res) => {
     }
 
     // 3. Ambil Master Data dari GAS untuk Validasi Item
-    // (Langkah ini penting untuk memastikan item yang dikirim benar-benar ada di database)
     const masterResponse = await axios.post(GOOGLE_SCRIPT_URL, {
       action: "getTabunganData",
     });
@@ -403,24 +402,35 @@ app.post("/api/tabungan-batch", async (req, res) => {
 
     // 4. Loop Validasi: Pastikan item tabungan valid sesuai Master Data
     for (const item of tabungan_list) {
-      const master = masterList.find(
-        (m) =>
-          m.nama === nama &&
-          m.kerja_tabungan_gaji === item.kerja_tabungan_gaji &&
-          m.parameter === item.parameter
-      );
+      const master = masterList.find((m) => {
+        // --- NORMALISASI STRING ---
+        // Kita ubah jadi huruf kecil semua (.toLowerCase()) 
+        // dan hapus spasi nyasar di ujung kata (.trim())
+        const masterNama = String(m.nama || "").toLowerCase().trim();
+        const payloadNama = String(nama || "").toLowerCase().trim();
+
+        const masterKerja = String(m.kerja_tabungan_gaji || "").toLowerCase().trim();
+        const payloadKerja = String(item.kerja_tabungan_gaji || "").toLowerCase().trim();
+
+        const masterParam = String(m.parameter || "").toLowerCase().trim();
+        const payloadParam = String(item.parameter || "").toLowerCase().trim();
+
+        return (
+          masterNama === payloadNama &&
+          masterKerja === payloadKerja &&
+          masterParam === payloadParam
+        );
+      });
 
       if (!master) {
         return res.status(400).json({
           result: "error",
-          message: `Item tabungan "${item.kerja_tabungan_gaji}" dengan parameter "${item.parameter}" tidak ditemukan di data master karyawan tersebut.`,
+          message: `Item tabungan "${item.kerja_tabungan_gaji}" dengan parameter "${item.parameter}" tidak ditemukan di data master karyawan tersebut. Pastikan teks sama persis dengan yang ada di Google Sheets.`,
         });
       }
     }
 
     // 5. Kirim Payload ke Google Apps Script
-    // Karena 'tabungan_list' dari React sekarang isinya sudah URL file (bukan file fisik),
-    // kita bisa langsung meneruskannya (forward) ke GAS.
     const response = await axios.post(GOOGLE_SCRIPT_URL, {
       action: "tabunganBatch",
       email,
@@ -643,3 +653,4 @@ if (process.env.NODE_ENV !== "production") {
 
 // ========================= EXPORT FOR VERCEL =========================
 module.exports = app;
+
